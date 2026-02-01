@@ -1,0 +1,428 @@
+{
+  "name": "pdf_extract",
+  "nodes": [
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://api.notion.com/v1/pages/{{ $('get notion page').item.json.results[0].id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer ntn_xxx"
+            },
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"properties\": {\n    \"제목\": {\n      \"title\": [\n        {\n          \"text\": {\n            \"content\": \"{{ $json.output.title }}\"\n          }\n        }\n      ]\n    }\n  }\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2208,
+        -96
+      ],
+      "id": "54124a25-be26-4a91-89ba-c228c16f1b12",
+      "name": "Update title"
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "binaryPropertyName": "=data",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        -2768,
+        -96
+      ],
+      "id": "5a3d44c3-c9f3-419e-bd0f-b3196c9d82b8",
+      "name": "Extract from File"
+    },
+    {
+      "parameters": {
+        "jsCode": "const MAX_LENGTH = 2000;\n\nfor (const item of $input.all()) {\n  const content = item.json.output?.content || \"\";\n\n  // 2000자 단위로 분리\n  const chunks = [];\n  for (let i = 0; i < content.length; i += MAX_LENGTH) {\n    chunks.push(content.slice(i, i + MAX_LENGTH));\n  }\n\n  // 결과 추가\n  item.json.content_chunks = chunks;\n  item.json.is_split = content.length > MAX_LENGTH;\n}\n\nreturn $input.all();\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2192,
+        80
+      ],
+      "id": "3556a8f4-0b31-40a3-b386-06aee756145d",
+      "name": "split chunks"
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n\t\"type\": \"object\",\n\t\"properties\": {\n\t\t\"title\": {\n\t\t\t\"type\": \"string\"\n\t\t},\n\t\t\"content\": {\n\t\t\t\"type\": \"string\"\n\t\t}\n\t}\n}",
+        "autoFix": true
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        -2512,
+        80
+      ],
+      "id": "2df4eccd-1bb5-474e-ba04-9c739cc7e59c",
+      "name": "Structured Output Parser"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.text }}",
+        "hasOutputParser": true,
+        "messages": {
+          "messageValues": [
+            {
+              "message": "=당신은 논문을 독자가 쉽게 이해하도록 재구성하는 전문 에디터입니다.\n\n입력으로 제공된 텍스트는 “논문 PDF에서 추출된 원문”입니다.\n논문의 제목과 본문이 모두 포함되어 있으며, 제목은 본문 내용의 첫 문장입니다.\n이를 한국어로 쉽고 친근하게 각색하되, 다음 규칙을 반드시 따르세요.\n\n---\n\n[스타일 가이드]\n\n0. (최우선 규칙) 숫자 명시 리스트 보존:\n\n   * 각 번호는 원문에서 대응되는 항목 1개를 1:1로 유지해야 합니다.\n   * 만약 원문에 숫자가 명시되어 있지만 실제 항목 수가 불명확하면,\n     논문 내용을 분석하여 가능한 N개를 복원해 작성하세요.\n\n1. 글 구조:\n\n   * 제목은 원문 텍스트의 첫 문장(첫 줄)을 그대로 사용하되, 자연스러운 한국어 제목으로 정리합니다.\n   * 제목의 처음과 끝에는 연관된 이모지를 하나씩 추가합니다.\n\n   전체 글은 다음 순서를 따릅니다:\n   • 도입: 문제 제기 및 연구 배경(왜 중요한가?)\n   • 본문: 번호형 핵심 요약(1️⃣, 2️⃣, 3️⃣ … 사용)\n   • 결론: 💡 마무리하며 (핵심 요약 + 실무/연구 관점 통찰)\n\n2. 문체:\n\n   * 설명하듯 친근한 구어체로 작성하되, 기술 전문성을 유지합니다.\n   * 문장은 짧고 명확하게 끊습니다.\n   * 마크다운 문법(#, )은 사용하지 마세요.\n   * 불필요한 영어 남용은 피하고, 기술용어만 영어로 표기합니다.\n   * 논문 특유의 딱딱한 표현은 더 쉬운 말로 풀어주세요.\n\n3. 내용:\n\n   * 논문의 핵심 구성요소가 빠지지 않도록 요약하세요.\n     반드시 포함할 항목(논문에 존재한다면):\n     ✔ 문제 정의 / 연구 질문\n     ✔ 기존 방법의 한계\n     ✔ 제안 방법(핵심 아이디어)\n     ✔ 실험/평가 방법(데이터셋, 지표 등)\n     ✔ 주요 결과(정량/정성 결과)\n     ✔ 한계와 향후 과제\n   * 코드/수식/표/세부 실험 값은 생략해도 되지만,\n     “무엇을 왜 했고, 결과가 어땠는지”는 구체적으로 설명하세요.\n   * 너무 일반적이거나 모호한 문장은 피하고, 가능한 경우 실제 예시/비유를 넣어주세요.\n   * 글 전개는 ‘문제 → 원인 → 해결(방법) → 결과 → 시사점’ 구조를 유지합니다.\n\n4. 톤 & 마무리:\n\n   * 결론부는 단호하면서도 긍정적으로 마무리합니다.\n   * 마지막 문장은 독자가 ‘한 줄 교훈’을 얻을 수 있도록 정리합니다.\n\n5. 가드레일:\n\n   * 전체 글자수는 2000자 내외로 작성하세요.\n   * 출력은 순수한 본문 형태로만 생성하세요.\n   * 불필요한 해설, 제목 안내, 마크다운 문법은 포함하지 마세요.\n   * PDF 텍스트가 깨져 있거나 문장이 이상한 경우에도, 맥락을 최대한 복원해 자연스럽게 작성하세요.\n\n---\n\n출력은 아래 JSON 형식으로만 출력해주세요.\n\n{\"title\": \"한국어 제목\", \"content\": \"요약 내용\"}"
+            }
+          ]
+        },
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.8,
+      "position": [
+        -2576,
+        -96
+      ],
+      "id": "c8482b03-7c04-42b1-aa7e-08dc7943d6ad",
+      "name": "Summarize_Agent"
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://api.notion.com/v1/blocks/{{ $('get notion page').item.json.results[0].id }}/children",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer ntn_xxx"
+            },
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"children\": [\n    {\n      \"object\": \"block\",\n      \"type\": \"code\",\n      \"code\": {\n        \"language\": \"plain text\",\n        \"rich_text\": [\n          {\n            \"type\": \"text\",\n            \"text\": {\n              \"content\": \"{{ JSON.stringify($json.content_chunks[0]).replace(/^\\\"|\\\"$/g, '') }}\"\n            }\n          }\n        ]\n      }\n    },\n    {\n      \"object\": \"block\",\n      \"type\": \"code\",\n      \"code\": {\n        \"language\": \"plain text\",\n        \"rich_text\": [\n          {\n            \"type\": \"text\",\n            \"text\": {\n              \"content\": \"{{ JSON.stringify($json.content_chunks[1]).replace(/^\\\"|\\\"$/g, '') }}\"\n            }\n          }\n        ]\n      }\n    }\n  ]\n}\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1728,
+        224
+      ],
+      "id": "3f06fa6f-94cc-4d70-a25f-f17d28515f06",
+      "name": "Update content2"
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://api.notion.com/v1/blocks/{{ $('get notion page').item.json.results[0].id }}/children",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer ntn_xxx"
+            },
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"children\": [\n    {\n      \"object\": \"block\",\n      \"type\": \"code\",\n      \"code\": {\n        \"language\": \"plain text\",\n        \"rich_text\": [\n          {\n            \"type\": \"text\",\n            \"text\": {\n              \"content\": \"{{ JSON.stringify($json.content_chunks[0]).replace(/^\\\"|\\\"$/g, '') }}\"\n            }\n          }\n        ]\n      }\n    }\n  ]\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1728,
+        64
+      ],
+      "id": "597d796b-c8bb-49b2-b204-8d8c2c024ab9",
+      "name": "Update content1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "00ead4aa-49be-4c2f-aea3-a89d28305984",
+              "leftValue": "={{ $json.is_split }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -2032,
+        80
+      ],
+      "id": "7f43499e-4f4d-438f-b9c1-100cfc3f821f",
+      "name": "If over "
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.results[0].properties.file.files[0].file.url }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2928,
+        -96
+      ],
+      "id": "4fc8001a-0739-4852-8e2e-cd1b97770ef4",
+      "name": "http_to_binary"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -3232,
+        -96
+      ],
+      "id": "6ae95298-c788-404c-afab-edeea7149904",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.notion.com/v1/databases/DATABASE_ID/query",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer ntn_xxx"
+            },
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"sorts\": [\n    {\n      \"timestamp\": \"last_edited_time\",\n      \"direction\": \"descending\"\n    }\n  ],\n  \"page_size\": 1\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -3072,
+        -96
+      ],
+      "id": "c2f565ad-e9f0-47a8-8a90-089fc096a7e1",
+      "name": "get notion page"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        -2640,
+        80
+      ],
+      "id": "34151269-72da-4873-b6c0-114a67495227",
+      "name": "Google Gemini Chat Model"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        -2512,
+        224
+      ],
+      "id": "de074fdd-1de4-4b5d-933d-9e4982788767",
+      "name": "Google Gemini Chat Model1",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "ukLhOrK8a4VpWc4W",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Update title": {
+      "main": [
+        []
+      ]
+    },
+    "Extract from File": {
+      "main": [
+        [
+          {
+            "node": "Summarize_Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "split chunks": {
+      "main": [
+        [
+          {
+            "node": "If over ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Summarize_Agent",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Summarize_Agent": {
+      "main": [
+        [
+          {
+            "node": "Update title",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "split chunks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If over ": {
+      "main": [
+        [
+          {
+            "node": "Update content1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update content2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "http_to_binary": {
+      "main": [
+        [
+          {
+            "node": "Extract from File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "get notion page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "get notion page": {
+      "main": [
+        [
+          {
+            "node": "http_to_binary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Summarize_Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Structured Output Parser",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "versionId": "51e9b9fd-7d31-4696-8244-9149caaea2b0",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "9b574ac706455522698985d51afded13a989cdea69e442db0cae10330d4bbc5c"
+  },
+  "id": "Tj8JWJ2Z30r4OadP",
+  "tags": []
+}
